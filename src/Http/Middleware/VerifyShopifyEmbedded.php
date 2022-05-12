@@ -214,6 +214,11 @@ class VerifyShopifyEmbedded extends VerifyShopify
             return false;
         }
 
+        // Override auth guard
+        if (($guard = Util::getShopifyConfig('shop_auth_guard'))) {
+            $this->auth->setDefaultDriver($guard);
+        }
+
         // All is well, login the shop
         $this->auth->login($shop);
 
@@ -320,6 +325,6 @@ class VerifyShopifyEmbedded extends VerifyShopify
     {
         $shop = $this->shopQuery->getByDomain(ShopDomain::fromRequest($request), [], true);
 
-        return $shop && ! $shop->trashed();
+        return $shop && $shop->password && ! $shop->trashed();
     }
 }

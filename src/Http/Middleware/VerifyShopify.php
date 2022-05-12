@@ -57,95 +57,6 @@ class VerifyShopify
     }
 
     /**
-     * Login and verify the shop and it's data.
-     *
-     * @param SessionToken      $token     The session token.
-     * @param NullableSessionId $sessionId Incoming session ID (if available).
-     *
-     * @return bool
-     */
-    protected function loginShopFromToken(SessionToken $token, NullableSessionId $sessionId): bool
-    {
-        // Get the shop
-        $shop = $this->shopQuery->getByDomain($token->getShopDomain(), [], true);
-        if (! $shop) {
-            return false;
-        }
-
-        // Set the session details for the token, session ID, and access token
-        $context = new SessionContext($token, $sessionId, $shop->getAccessToken());
-        $shop->setSessionContext($context);
-
-        $previousContext = $this->previousShop ? $this->previousShop->getSessionContext() : null;
-        if (! $shop->getSessionContext()->isValid($previousContext)) {
-            // Something is invalid
-            return false;
-        }
-
-        // Override auth guard
-        if (($guard = Util::getShopifyConfig('shop_auth_guard'))) {
-            $this->auth->setDefaultDriver($guard);
-        }
-
-        // All is well, login the shop
-        $this->auth->login($shop);
-
-        return true;
-    }
-
-    /**
-     * Redirect to token route.
-     *
-     * @param Request $request The request object.
-     *
-     * @return RedirectResponse
-     */
-    protected function tokenRedirect(Request $request): RedirectResponse
-    {
-        // At this point the HMAC and other details are verified already, filter it out
-        $path = $request->path();
-        $target = Str::start($path, '/');
-
-        if ($request->query()) {
-            $filteredQuery = Collection::make($request->query())->except([
-                'hmac',
-                'locale',
-                'new_design_language',
-                'timestamp',
-                'session',
-                'shop',
-            ]);
-
-            if ($filteredQuery->isNotEmpty()) {
-                $target .= '?'.http_build_query($filteredQuery->toArray());
-            }
-        }
-
-        return Redirect::route(
-            Util::getShopifyConfig('route_names.authenticate.token'),
-            [
-                'shop' => ShopDomain::fromRequest($request)->toNative(),
-                'target' => $target,
-            ]
-        );
-    }
-
-    /**
-     * Redirect to install route.
-     *
-     * @param ShopDomainValue $shopDomain The shop domain.
-     *
-     * @return RedirectResponse
-     */
-    protected function installRedirect(ShopDomainValue $shopDomain): RedirectResponse
-    {
-        return Redirect::route(
-            Util::getShopifyConfig('route_names.authenticate'),
-            ['shop' => $shopDomain->toNative()]
-        );
-    }
-
-    /**
      * Grab the HMAC value, if present, and how it was found.
      * Order of precedence is:.
      *
@@ -285,32 +196,6 @@ class VerifyShopify
 
         // Array or basic value
         return $formatValue($value);
-    }
-
-    /**
-     * Determine if the request is AJAX or expects JSON.
-     *
-     * @param Request $request The request object.
-     *
-     * @return bool
-     */
-    protected function isApiRequest(Request $request): bool
-    {
-        return $request->ajax() || $request->expectsJson();
-    }
-
-    /**
-     * Check if there is a store record in the database.
-     *
-     * @param Request $request The request object.
-     *
-     * @return bool
-     */
-    protected function checkPreviousInstallation(Request $request): bool
-    {
-        $shop = $this->shopQuery->getByDomain(ShopDomain::fromRequest($request), [], true);
-
-        return $shop && $shop->password && ! $shop->trashed();
     }
 
 }
