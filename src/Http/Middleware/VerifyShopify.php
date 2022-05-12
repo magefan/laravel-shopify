@@ -2,39 +2,17 @@
 
 namespace Osiset\ShopifyApp\Http\Middleware;
 
-use Assert\AssertionFailedException;
 use Closure;
-use Illuminate\Auth\AuthManager;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Str;
 use Osiset\ShopifyApp\Contracts\ApiHelper as IApiHelper;
-use Osiset\ShopifyApp\Contracts\Objects\Values\ShopDomain as ShopDomainValue;
-use Osiset\ShopifyApp\Contracts\Queries\Shop as IShopQuery;
-use Osiset\ShopifyApp\Contracts\ShopModel;
-use Osiset\ShopifyApp\Exceptions\HttpException;
 use Osiset\ShopifyApp\Exceptions\SignatureVerificationException;
 use Osiset\ShopifyApp\Objects\Enums\DataSource;
-use Osiset\ShopifyApp\Objects\Values\NullableSessionId;
-use Osiset\ShopifyApp\Objects\Values\SessionContext;
-use Osiset\ShopifyApp\Objects\Values\SessionToken;
-use Osiset\ShopifyApp\Objects\Values\ShopDomain;
-use Osiset\ShopifyApp\Util;
 
 /**
  * Responsible for validating the request.
  */
 class VerifyShopify
 {
-    /**
-     * The auth manager.
-     *
-     * @var AuthManager
-     */
-    protected $auth;
 
     /**
      * The API helper.
@@ -43,50 +21,6 @@ class VerifyShopify
      */
     protected $apiHelper;
 
-    /**
-     * The shop querier.
-     *
-     * @var IShopQuery
-     */
-    protected $shopQuery;
-
-    /**
-     * Previous request shop.
-     *
-     * @var ShopModel|null
-     */
-    protected $previousShop;
-
-    /**
-     * Constructor.
-     *
-     * @param AuthManager $auth      The Laravel auth manager.
-     * @param IApiHelper  $apiHelper The API helper.
-     * @param IShopQuery  $shopQuery The shop querier.
-     *
-     * @return void
-     */
-    public function __construct(
-        AuthManager $auth,
-        IApiHelper $apiHelper,
-        IShopQuery $shopQuery
-    ) {
-        $this->auth = $auth;
-        $this->shopQuery = $shopQuery;
-        $this->apiHelper = $apiHelper;
-        $this->apiHelper->make();
-    }
-
-    /**
-     * Undocumented function.
-     *
-     * @param Request $request The request object.
-     * @param Closure $next    The next action.
-     *
-     * @throws SignatureVerificationException If HMAC verification fails.
-     *
-     * @return mixed
-     */
     public function handle(Request $request, Closure $next)
     {
         // Verify the HMAC (if available)
@@ -96,107 +30,7 @@ class VerifyShopify
             throw new SignatureVerificationException('Unable to verify signature.');
         }
 
-        // Continue if current route is an auth or billing route
-        if (Str::contains($request->getRequestUri(), ['/authenticate', '/billing'])) {
-            return $next($request);
-        }
-
-        $tokenSource = $this->getAccessTokenFromRequest($request);
-        if ($tokenSource === null) {
-            //Check if there is a store record in the database
-            return $this->checkPreviousInstallation($request)
-                // Shop exists, token not available, we need to get one
-                ? $this->handleMissingToken($request)
-                // Shop does not exist
-                : $this->handleInvalidShop($request);
-        }
-
-        try {
-            // Try and process the token
-            $token = SessionToken::fromNative($tokenSource);
-        } catch (AssertionFailedException $e) {
-            // Invalid or expired token, we need a new one
-            return $this->handleInvalidToken($request, $e);
-        }
-
-        // Set the previous shop (if available)
-        if ($request->user()) {
-            $this->previousShop = $request->user();
-        }
-
-        // Login the shop
-        $loginResult = $this->loginShopFromToken(
-            $token,
-            NullableSessionId::fromNative($request->query('session'))
-        );
-        if (! $loginResult) {
-            // Shop is not installed or something is missing from it's data
-            return $this->handleInvalidShop($request);
-        }
-
         return $next($request);
-    }
-
-    /**
-     * Handle missing token.
-     *
-     * @param Request $request The request object.
-     *
-     * @throws HttpException If an AJAX/JSON request.
-     *
-     * @return mixed
-     */
-    protected function handleMissingToken(Request $request)
-    {
-        if ($this->isApiRequest($request)) {
-            // AJAX, return HTTP exception
-            throw new HttpException(SessionToken::EXCEPTION_INVALID, Response::HTTP_BAD_REQUEST);
-        }
-
-        return $this->tokenRedirect($request);
-    }
-
-    /**
-     * Handle an invalid or expired token.
-     *
-     * @param Request                  $request The request object.
-     * @param AssertionFailedException $e       The assertion failure exception.
-     *
-     * @throws HttpException If an AJAX/JSON request.
-     *
-     * @return mixed
-     */
-    protected function handleInvalidToken(Request $request, AssertionFailedException $e)
-    {
-        $isExpired = $e->getMessage() === SessionToken::EXCEPTION_EXPIRED;
-        if ($this->isApiRequest($request)) {
-            // AJAX, return HTTP exception
-            throw new HttpException(
-                $e->getMessage(),
-                $isExpired ? Response::HTTP_FORBIDDEN : Response::HTTP_BAD_REQUEST
-            );
-        }
-
-        return $this->tokenRedirect($request);
-    }
-
-    /**
-     * Handle a shop that is not installed or it's data is invalid.
-     *
-     * @param Request $request The request object.
-     *
-     * @throws HttpException If an AJAX/JSON request.
-     *
-     * @return mixed
-     */
-    protected function handleInvalidShop(Request $request)
-    {
-        if ($this->isApiRequest($request)) {
-            // AJAX, return HTTP exception
-            throw new HttpException('Shop is not installed or missing data.', Response::HTTP_FORBIDDEN);
-        }
-
-        return $this->installRedirect(ShopDomain::fromRequest($request));
     }
 
     /**
@@ -355,31 +189,6 @@ class VerifyShopify
     }
 
     /**
-     * Get the token from request (if available).
-     *
-     * @param Request $request The request object.
-     *
-     * @return string
-     */
-    protected function getAccessTokenFromRequest(Request $request): ?string
-    {
-        if (Util::getShopifyConfig('turbo_enabled')) {
-            if ($request->bearerToken()) {
-                // Bearer tokens collect.
-                // Turbo does not refresh the page, values are attached to the same header.
-                $bearerTokens = Collection::make(explode(',', $request->header('Authorization', '')));
-                $newestToken = Str::substr(trim($bearerTokens->last()), 7);
-
-                return $newestToken;
-            }
-
-            return $request->get('token');
-        }
-
-        return $this->isApiRequest($request) ? $request->bearerToken() : $request->get('token');
-    }
-
-    /**
      * Grab the request data.
      *
      * @param Request $request The request object.
@@ -447,6 +256,7 @@ class VerifyShopify
         return $options[$source]();
     }
 
+
     /**
      * Parse the data source value.
      * Handle simple key/values, arrays, and nested arrays.
@@ -502,4 +312,5 @@ class VerifyShopify
 
         return $shop && $shop->password && ! $shop->trashed();
     }
+
 }
