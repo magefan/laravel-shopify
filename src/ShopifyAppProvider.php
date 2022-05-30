@@ -32,6 +32,7 @@ use Osiset\ShopifyApp\Http\Middleware\AuthWebhook;
 use Osiset\ShopifyApp\Http\Middleware\Billable;
 use Osiset\ShopifyApp\Http\Middleware\VerifyShopifyEmbedded;
 use Osiset\ShopifyApp\Http\Middleware\VerifyShopifyExternal;
+use Osiset\ShopifyApp\Http\Middleware\VerifyShopifyExternalHmac;
 use Osiset\ShopifyApp\Macros\TokenRedirect;
 use Osiset\ShopifyApp\Macros\TokenRoute;
 use Osiset\ShopifyApp\Messaging\Jobs\ScripttagInstaller;
@@ -306,6 +307,7 @@ class ShopifyAppProvider extends ServiceProvider
         $this->app['router']->aliasMiddleware('auth.webhook', AuthWebhook::class);
         $this->app['router']->aliasMiddleware('billable', Billable::class);
         $this->app['router']->aliasMiddleware('verify.shopify.external', VerifyShopifyExternal::class);
+        $this->app['router']->aliasMiddleware('verify.shopify.external.hmac', VerifyShopifyExternalHmac::class);
 
         if(Util::getShopifyConfig('appbridge_enabled')) {
             $this->app['router']->aliasMiddleware('verify.shopify', VerifyShopifyEmbedded::class);
