@@ -16,7 +16,14 @@
                 </main>
             </div>
         </div>
-
+        <?php
+            $host = \Request::get('host');
+            if (!$host && ($target = request()->input('target'))) {
+                parse_str(trim($target,'/?'),$parsedTarget);
+                $host = $parsedTarget['host'] ?? '';
+                request()->merge(["host"=>$host]);
+            }
+        ?>
         @if(\Osiset\ShopifyApp\Util::getShopifyConfig('appbridge_enabled'))
             <script src="https://unpkg.com/@shopify/app-bridge{{ \Osiset\ShopifyApp\Util::getShopifyConfig('appbridge_version') ? '@'.config('shopify-app.appbridge_version') : '' }}"></script>
             <script src="https://unpkg.com/@shopify/app-bridge-utils{{ \Osiset\ShopifyApp\Util::getShopifyConfig('appbridge_version') ? '@'.config('shopify-app.appbridge_version') : '' }}"></script>
@@ -31,8 +38,7 @@
                 var createApp = AppBridge.default;
                 var app = createApp({
                     apiKey: "{{ \Osiset\ShopifyApp\Util::getShopifyConfig('api_key', $shopDomain ?? Auth::user()->name ) }}",
-                    shopOrigin: "{{ $shopDomain ?? Auth::user()->name }}",
-                    host: "{{ \Request::get('host') }}",
+                    host: "{{ $host }}",
                     forceRedirect: true,
                 });
             </script>
