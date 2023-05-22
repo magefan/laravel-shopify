@@ -87,6 +87,10 @@ class VerifyShopifyExternalHmac extends VerifyShopifyExternal
             unset($data['change_pwd_flag']);
         }
 
+        if (isset($data['real_domain'])) {
+            unset($data['real_domain']);
+        }
+
         //Create data string for the remaining url parameters
         $dataString = http_build_query($data);
 

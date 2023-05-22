@@ -84,7 +84,7 @@ class GetPlanUrl
 
             $confirmationUrl = $api['confirmation_url'];
         }
-
+        
         return $confirmationUrl;
     }
 }
